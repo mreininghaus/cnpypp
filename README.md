@@ -146,14 +146,14 @@ void npz_save(std::string const& zipname, std::string fname,
               std::initializer_list<size_t const> shape,
               std::string_view mode = "w",
               MemoryOrder memory_order = MemoryOrder::C,
-              CompressionMethod compr_method = CompressionMethod::Deflate)
+              CompressionMethod compr_method = CompressionMethod::Deflate);
               
 template <typename TConstInputIterator>
 void npz_save(std::string const& zipname, std::string fname,
               TConstInputIterator start, cnpypp::span<size_t const> const shape,
               std::string_view mode = "w",
               MemoryOrder memory_order = MemoryOrder::C,
-              CompressionMethod compr_method = CompressionMethod::Deflate)
+              CompressionMethod compr_method = CompressionMethod::Deflate);
 
 template <typename TTupleIterator>
 void npz_save(std::string const& zipname, std::string const& fname,
@@ -161,7 +161,7 @@ void npz_save(std::string const& zipname, std::string const& fname,
               cnpypp::span<size_t const> const shape,
               std::string_view mode = "w",
               MemoryOrder memory_order = MemoryOrder::C,
-              CompressionMethod compr_method = CompressionMethod::Deflate)
+              CompressionMethod compr_method = CompressionMethod::Deflate);
 ```
 The first parameter, `zipname`, refers to the filename of the NPZ archive, while `fname` refers to
 the filename inside the archive (excluding the "`.npy`" extension).
@@ -175,7 +175,7 @@ in the same way as it is possible with `npy_save()`.
 
 ### Reading data
 ```c++
-NpyArray npy_load(std::string const& fname, bool memory_mapped = false)
+NpyArray npy_load(std::string const& fname, bool memory_mapped = false);
 ```
 reads data from a file with filename `fname`. If `memory_mapped` is false (default), the whole file content is copied into memory.
 If true, the file gets memory-mapped, meaning its content can be read via pointers just like normal memory. The OS takes care to
@@ -185,14 +185,14 @@ The return type, `NpyArray`, contains the raw data as well as a number of method
 like iterators.
 
 ```c++
-NpyArray npz_load(std::string const& fname, std::string const& varname)
+NpyArray npz_load(std::string const& fname, std::string const& varname);
 ```
 reads the array named `varname` from a NPZ archive with filename `fname` into memory (files with data larger than available memory are currently not supported).
 The return type, `NpyArray` contains the raw data as well as a number of methods to query its metadata and convenience functionality
 like iterators.
 
 ```c++
-std::map<std::string, NpyArray> npz_load(std::string const& fname)
+std::map<std::string, NpyArray> npz_load(std::string const& fname);
 ```
 reads all arrays from a NPZ archive with filename `fname` into memory (files with data larger than available memory are currently not supported).
 The invividual arrays can be accessed from the returned map with their name as key.
