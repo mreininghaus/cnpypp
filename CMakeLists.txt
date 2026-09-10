@@ -62,7 +62,7 @@ target_include_directories(cnpy++ SYSTEM PUBLIC $<BUILD_INTERFACE:${PROJECT_SOUR
 target_include_directories(cnpy++ SYSTEM INTERFACE $<INSTALL_INTERFACE:$<INSTALL_PREFIX>/include>)
 target_link_libraries(cnpy++ PRIVATE Boost::filesystem Boost::iostreams)
 if(CNPYPP_USE_LIBZIP)
-  target_link_libraries(cnpy++ PRIVATE libzip::zip)
+  target_link_libraries(cnpy++ PUBLIC libzip::zip)
 else()
   target_compile_definitions(cnpy++ PUBLIC NO_LIBZIP)
 endif()
