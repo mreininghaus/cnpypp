@@ -31,9 +31,6 @@ enum cnpypp_data_type {
   cnpypp_float128 = 10
 };
 
-uint32_t _crc32(unsigned long int, uint8_t const*,
-                unsigned int); // calls crc32() from zlib
-
 struct cnpypp_npyarray_handle;
 
 int cnpypp_npy_save(char const* fname, enum cnpypp_data_type, void const* start,

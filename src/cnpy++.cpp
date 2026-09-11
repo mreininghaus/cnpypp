@@ -16,7 +16,6 @@
 
 #include <boost/endian/conversion.hpp>
 #include <boost/filesystem.hpp>
-#include <boost/iostreams/device/mapped_file.hpp>
 
 #ifndef NO_LIBZIP
 #include <zip.h>
@@ -26,7 +25,7 @@
 
 using namespace cnpypp;
 
-char cnpypp::BigEndianTest() {
+static char constexpr BigEndianTest() {
   static_assert(sizeof(uint32_t) == 4);
   union {
     uint32_t i;
@@ -36,8 +35,8 @@ char cnpypp::BigEndianTest() {
   return (test.c[0] == 0x04) ? '<' : '>';
 }
 
-std::vector<char>& cnpypp::append(std::vector<char>& vec,
-                                  std::string_view view) {
+static std::vector<char>& append(std::vector<char>& vec,
+                                 std::string_view view) {
   vec.insert(vec.end(), view.begin(), view.end());
   return vec;
 }
@@ -66,7 +65,10 @@ void cnpypp::parse_npy_header(std::istream::char_type const* buffer,
                                   header_len);
 
   if (!(major_version == 1 && minor_version == 0)) {
-    throw std::runtime_error("parse_npy_header: version not supported");
+    throw std::runtime_error("parse_npy_header(): version " +
+                             std::to_string((unsigned)major_version) + '.' +
+                             std::to_string((unsigned)minor_version) +
+                             " not supported");
   }
 
   parse_npy_dict(header, word_sizes, data_types, labels, shape, memory_order);
@@ -85,7 +87,7 @@ void cnpypp::parse_npy_header(std::istream& fs,
 
   if (!std::equal(npy_magic_string.begin(), npy_magic_string.end(),
                   buffer.cbegin())) {
-    throw std::runtime_error("parse_npy_header: NPY magic string not found");
+    throw std::runtime_error("parse_npy_header(): NPY magic string not found");
   }
 
   uint8_t const major_version = buffer[6];
@@ -93,7 +95,7 @@ void cnpypp::parse_npy_header(std::istream& fs,
 
   if (major_version != 1 || minor_version != 0) {
     throw std::runtime_error(
-        "parse_npy_header: NPY format version not supported");
+        "parse_npy_header(): NPY format version not supported");
   }
 
   uint16_t const header_len =
@@ -117,9 +119,9 @@ void cnpypp::parse_npy_dict(cnpypp::span<std::istream::char_type const> buffer,
                             std::vector<uint64_t>& shape,
                             cnpypp::MemoryOrder& memory_order) {
   if (buffer.back() != '\n') {
-    throw std::runtime_error("invalid header: missing terminating newline");
+    throw std::runtime_error("parse_npy_dict(): missing terminating newline");
   } else if (buffer.front() != '{') {
-    throw std::runtime_error("invalid header: malformed dictionary");
+    throw std::runtime_error("parse_npy_dict(): malformed dictionary");
   }
 
   std::string_view const dict{buffer.data(), buffer.size()};
@@ -127,7 +129,7 @@ void cnpypp::parse_npy_dict(cnpypp::span<std::istream::char_type const> buffer,
   if (std::cmatch matches;
       !std::regex_search(dict.begin(), dict.end(), matches,
                          std::regex{"'fortran_order': (True|False)"})) {
-    throw std::runtime_error("invalid header: missing 'fortran_order'");
+    throw std::runtime_error("parse_npy_dict(): missing 'fortran_order'");
   } else {
     memory_order = (matches[1].str() == "True") ? cnpypp::MemoryOrder::Fortran
                                                 : cnpypp::MemoryOrder::C;
@@ -144,11 +146,11 @@ void cnpypp::parse_npy_dict(cnpypp::span<std::istream::char_type const> buffer,
 
   if (auto const pos_start_shape = dict.find(sh);
       pos_start_shape == std::string_view::npos) {
-    throw std::runtime_error("invalid header: missing 'shape'");
+    throw std::runtime_error("parse_npy_dict(): missing 'shape'");
   } else {
     if (auto const pos_end_shape = dict.find(')', pos_start_shape);
         pos_end_shape == std::string_view::npos) {
-      throw std::runtime_error("invalid header: malformed dictionary");
+      throw std::runtime_error("parse_npy_dict(): malformed dictionary");
     } else {
       std::regex digit_re{"\\d+"};
       auto dims_begin =
@@ -165,7 +167,7 @@ void cnpypp::parse_npy_dict(cnpypp::span<std::istream::char_type const> buffer,
   std::string_view const desc = "'descr': ";
   if (auto const pos_start_desc = dict.find(desc);
       pos_start_desc == std::string_view::npos) {
-    throw std::runtime_error("invalid header: missing 'descr'");
+    throw std::runtime_error("parse_npy_dict(): missing 'descr'");
   } else {
     if (auto const c = dict[pos_start_desc + desc.size()]; c == '\'') {
       // simple type
@@ -174,10 +176,11 @@ void cnpypp::parse_npy_dict(cnpypp::span<std::istream::char_type const> buffer,
           !std::regex_search(dict.begin() + pos_start_desc, dict.end(), matches,
                              std::regex{"'([<>\\|])([a-zA-z])(\\d+)'"})) {
         throw std::runtime_error(
-            "parse_npy_header: could not parse data type descriptor");
+            "parse_npy_header(): could not parse data type descriptor");
       } else if (matches[1].str() == ">") {
-        throw std::runtime_error("parse_npy_header: data stored in big-endian "
-                                 "format (not supported)");
+        throw std::runtime_error(
+            "parse_npy_header(): data stored in big-endian "
+            "format (not supported)");
       } else {
         data_types.push_back(*(matches[2].first));
         word_sizes.push_back(std::stoi(matches[3].str()));
@@ -188,7 +191,7 @@ void cnpypp::parse_npy_dict(cnpypp::span<std::istream::char_type const> buffer,
       if (auto const pos_end_list =
               dict.find(']', pos_start_desc + desc.size());
           pos_end_list == std::string_view::npos) {
-        throw std::runtime_error("invalid header: malformed list in 'descr'");
+        throw std::runtime_error("parse_npy_dict(): malformed list in 'descr'");
       } else {
         auto tuples_begin = std::cregex_iterator(
             dict.begin() + pos_start_desc + desc.size(),
@@ -209,7 +212,7 @@ void cnpypp::parse_npy_dict(cnpypp::span<std::istream::char_type const> buffer,
         }
       }
     } else {
-      throw std::runtime_error("invalid header: malformed 'descr'");
+      throw std::runtime_error("parse_npy_dict(): malformed 'descr'");
     }
   }
 }
@@ -697,9 +700,9 @@ cnpypp_npyarray_get_memory_order(cnpypp_npyarray_handle const* npyarr) {
 }
 
 #ifndef NO_LIBZIP
-zip_int64_t cnpypp::detail::npzwrite_source_callback(void* userdata, void* data,
-                                                     zip_uint64_t length,
-                                                     zip_source_cmd_t cmd) {
+zip_int64_t npzwrite_source_callback(void* userdata, void* data,
+                                     zip_uint64_t length,
+                                     zip_source_cmd_t cmd) {
   auto* const parameters =
       reinterpret_cast<cnpypp::detail::additional_parameters*>(userdata);
   char* data_char = reinterpret_cast<char*>(data);
@@ -772,7 +775,8 @@ zip_int64_t cnpypp::detail::npzwrite_source_callback(void* userdata, void* data,
     return 0;
 
   default:
-    std::cerr << "libcnpy++: should not happen: " << cmd << std::endl;
+    std::cerr << "npzwrite_source_callback(): should not happen: " << cmd
+              << std::endl;
     return 0;
   }
 }
@@ -804,9 +808,8 @@ cnpypp::prepare_npz(std::string const& zipname,
 void cnpypp::finalize_npz(zip_t* archive, std::string fname,
                           detail::additional_parameters& parameters,
                           CompressionMethod compr_method) {
-  zip_source_t* source =
-      zip_source_function(archive, detail::npzwrite_source_callback,
-                          reinterpret_cast<void*>(&parameters));
+  zip_source_t* source = zip_source_function(
+      archive, npzwrite_source_callback, reinterpret_cast<void*>(&parameters));
 
   fname += ".npy";
   auto const index = zip_file_add(archive, fname.c_str(), source,

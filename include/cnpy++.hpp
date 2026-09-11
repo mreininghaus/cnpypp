@@ -65,8 +65,8 @@ struct additional_parameters {
   additional_parameters(
       std::vector<char>&& _npyheader, size_t size,
       std::function<size_t(cnpypp::span<char>, additional_parameters*)> _func)
-      : npyheader{std::move(_npyheader)},
-        header_bytes_remaining{npyheader.size()}, buffer_capacity{size},
+      : npyheader{std::move(_npyheader)}, buffer_capacity{size},
+        header_bytes_remaining{npyheader.size()},
         buffer{std::make_unique<char[]>(size)}, func{_func} {}
 
   std::vector<char> const npyheader;
@@ -76,9 +76,6 @@ struct additional_parameters {
   std::unique_ptr<char[]> const buffer;
   std::function<size_t(cnpypp::span<char>, additional_parameters*)> const func;
 };
-
-zip_int64_t npzwrite_source_callback(void*, void*, zip_uint64_t,
-                                     zip_source_cmd_t);
 } // namespace detail
 #endif
 
@@ -281,8 +278,6 @@ private:
 
 using npz_t = std::map<std::string, NpyArray>;
 
-char BigEndianTest();
-
 bool _exists(std::string const&); // calls boost::filesystem::exists()
 
 std::vector<char> create_npy_header(cnpypp::span<uint64_t const> shape,
@@ -334,7 +329,8 @@ bool constexpr is_contiguous_v =
 // if it comes from contiguous memory, dump directly in file
 template <typename TConstInputIterator,
           std::enable_if_t<is_contiguous_v<TConstInputIterator>, int> = 0>
-void write_data(TConstInputIterator start, uint64_t nels, std::ostream& fs) {
+inline void write_data(TConstInputIterator start, uint64_t nels,
+                       std::ostream& fs) {
   using value_type =
       typename std::iterator_traits<TConstInputIterator>::value_type;
 
@@ -347,7 +343,8 @@ void write_data(TConstInputIterator start, uint64_t nels, std::ostream& fs) {
 // otherwise do it in chunks with a buffer
 template <typename TConstInputIterator,
           std::enable_if_t<!is_contiguous_v<TConstInputIterator>, int> = 0>
-void write_data(TConstInputIterator start, uint64_t nels, std::ostream& fs) {
+inline void write_data(TConstInputIterator start, uint64_t nels,
+                       std::ostream& fs) {
   using value_type =
       typename std::iterator_traits<TConstInputIterator>::value_type;
 
@@ -371,7 +368,9 @@ void write_data(TConstInputIterator start, uint64_t nels, std::ostream& fs) {
   }
 }
 
-template <typename T, int k = 0> void fill(T const& tup, char* buffer) {
+template <typename T, int k = 0,
+          std::enable_if_t<detail::is_tuple_like_v<T>, int> = 0>
+inline void fill(T const& tup, char* buffer) {
   auto constexpr offsets = tuple_info<T>::offsets;
 
   if constexpr (k < tuple_info<T>::size) {
@@ -387,7 +386,8 @@ template <typename T, int k = 0> void fill(T const& tup, char* buffer) {
 }
 
 template <typename TTupleIterator>
-void write_data_tuple(TTupleIterator start, uint64_t nels, std::ostream& fs) {
+inline void write_data_tuple(TTupleIterator start, uint64_t nels,
+                             std::ostream& fs) {
   using value_type = typename std::iterator_traits<TTupleIterator>::value_type;
   static auto constexpr sizes = tuple_info<value_type>::element_sizes;
   static auto constexpr sum = tuple_info<value_type>::sum_sizes;
@@ -418,7 +418,7 @@ void write_data_tuple(TTupleIterator start, uint64_t nels, std::ostream& fs) {
 }
 
 template <typename T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
-std::vector<char>& operator+=(std::vector<char>& lhs, const T rhs) {
+inline std::vector<char>& operator+=(std::vector<char>& lhs, const T rhs) {
   // write in little endian
   boost::endian::endian_buffer<boost::endian::order::little, T,
                                sizeof(T) * CHAR_BIT> const buffer{rhs};
@@ -431,13 +431,11 @@ std::vector<char>& operator+=(std::vector<char>& lhs, const T rhs) {
   return lhs;
 }
 
-std::vector<char>& append(std::vector<char>&, std::string_view);
-
 template <typename TConstInputIterator>
-void npy_save(std::string const& fname, TConstInputIterator start,
-              cnpypp::span<uint64_t const> const shape,
-              std::string_view mode = "w",
-              MemoryOrder memory_order = MemoryOrder::C) {
+inline void npy_save(std::string const& fname, TConstInputIterator start,
+                     cnpypp::span<uint64_t const> const shape,
+                     std::string_view mode = "w",
+                     MemoryOrder memory_order = MemoryOrder::C) {
   std::fstream fs;
   std::vector<uint64_t>
       true_data_shape; // if appending, the shape of existing + new data
@@ -473,8 +471,7 @@ void npy_save(std::string const& fname, TConstInputIterator start,
     }
 
     if (memory_order != memory_order_exist) {
-      throw std::runtime_error{
-          "libcnpy++ error in npy_save(): memory order does not match"};
+      throw std::runtime_error{"npy_save(): memory order does not match"};
     }
 
     if (true_data_shape.size() != shape.size()) {
@@ -484,7 +481,7 @@ void npy_save(std::string const& fname, TConstInputIterator start,
     if (!std::equal(std::next(shape.begin()), shape.end(),
                     std::next(true_data_shape.begin()))) {
       std::stringstream ss;
-      ss << "libnpy error: npy_save attempting to append misshaped data to "
+      ss << "npy_save(): npy_save attempting to append misshaped data to "
          << std::quoted(fname);
       throw std::runtime_error{ss.str().c_str()};
     }
@@ -514,10 +511,10 @@ void npy_save(std::string const& fname, TConstInputIterator start,
 }
 
 template <typename TConstInputIterator>
-void npy_save(std::string const& fname, TConstInputIterator start,
-              std::initializer_list<uint64_t> const shape,
-              std::string_view mode = "w",
-              MemoryOrder memory_order = MemoryOrder::C) {
+inline void npy_save(std::string const& fname, TConstInputIterator start,
+                     std::initializer_list<uint64_t> const shape,
+                     std::string_view mode = "w",
+                     MemoryOrder memory_order = MemoryOrder::C) {
   npy_save<TConstInputIterator>(
       fname, start,
       cnpypp::span<uint64_t const>{std::data(shape), shape.size()}, mode,
@@ -537,12 +534,11 @@ void finalize_npz(zip_t*, std::string, detail::additional_parameters&,
 
 #ifndef NO_LIBZIP
 template <typename TConstInputIterator>
-void npz_save(std::string const& zipname, std::string const& fname,
-              TConstInputIterator start,
-              cnpypp::span<uint64_t const> const shape,
-              std::string_view mode = "w",
-              MemoryOrder memory_order = MemoryOrder::C,
-              CompressionMethod compr_method = CompressionMethod::Deflate) {
+inline void
+npz_save(std::string const& zipname, std::string const& fname,
+         TConstInputIterator start, cnpypp::span<uint64_t const> const shape,
+         std::string_view mode = "w", MemoryOrder memory_order = MemoryOrder::C,
+         CompressionMethod compr_method = CompressionMethod::Deflate) {
   using value_type =
       typename std::iterator_traits<TConstInputIterator>::value_type;
   size_t constexpr wordsize = sizeof(value_type);
@@ -595,12 +591,12 @@ void npz_save(std::string const& zipname, std::string const& fname,
 
 #ifndef NO_LIBZIP
 template <typename TTupleIterator>
-void npz_save(std::string const& zipname, std::string const& fname,
-              std::vector<std::string_view> const& labels, TTupleIterator first,
-              cnpypp::span<uint64_t const> const shape,
-              std::string_view mode = "w",
-              MemoryOrder memory_order = MemoryOrder::C,
-              CompressionMethod compr_method = CompressionMethod::Deflate) {
+inline void
+npz_save(std::string const& zipname, std::string const& fname,
+         std::vector<std::string_view> const& labels, TTupleIterator first,
+         cnpypp::span<uint64_t const> const shape, std::string_view mode = "w",
+         MemoryOrder memory_order = MemoryOrder::C,
+         CompressionMethod compr_method = CompressionMethod::Deflate) {
   using value_type = typename std::iterator_traits<TTupleIterator>::value_type;
 
   // forbid implementations of std::bool with sizeof(bool) != 1
@@ -610,7 +606,7 @@ void npz_save(std::string const& zipname, std::string const& fname,
 
   if (labels.size() != std::tuple_size_v<value_type>) {
     throw std::runtime_error(
-        "libcnpy++: number of labels does not match tuple size");
+        "npz_save(): number of labels does not match tuple size");
   }
 
   static auto constexpr dtypes = tuple_info<value_type>::data_types;
@@ -643,7 +639,6 @@ void npz_save(std::string const& zipname, std::string const& fname,
         libzip_buffer.size() > sum_size * n_tbw) {
       // some space left that could not be filled with a single element
       // write one into temp. buffer
-      char* const tmp = reinterpret_cast<char*>(&parameters->buffer[0]);
       auto const& tup = *(it++);
       fill<value_type>(tup, parameters->buffer.get());
       parameters->buffer_size = sum_size;
@@ -664,12 +659,11 @@ void npz_save(std::string const& zipname, std::string const& fname,
 
 #ifndef NO_LIBZIP
 template <typename TConstInputIterator>
-void npz_save(std::string const& zipname, std::string fname,
-              TConstInputIterator start,
-              std::initializer_list<uint64_t const> shape,
-              std::string_view mode = "w",
-              MemoryOrder memory_order = MemoryOrder::C,
-              CompressionMethod compr_method = CompressionMethod::Deflate) {
+inline void
+npz_save(std::string const& zipname, std::string fname,
+         TConstInputIterator start, std::initializer_list<uint64_t const> shape,
+         std::string_view mode = "w", MemoryOrder memory_order = MemoryOrder::C,
+         CompressionMethod compr_method = CompressionMethod::Deflate) {
   npz_save(zipname, std::move(fname), start,
            cnpypp::span<uint64_t const>{std::data(shape), shape.size()}, mode,
            memory_order, compr_method);
@@ -677,8 +671,8 @@ void npz_save(std::string const& zipname, std::string fname,
 #endif
 
 template <typename TForwardIterator>
-void npy_save(std::string const& fname, TForwardIterator first,
-              TForwardIterator last, std::string_view mode = "w") {
+inline void npy_save(std::string const& fname, TForwardIterator first,
+                     TForwardIterator last, std::string_view mode = "w") {
   static_assert(
       std::is_base_of_v<
           std::forward_iterator_tag,
@@ -695,21 +689,22 @@ void npy_save(std::string const& fname, TForwardIterator first,
 }
 
 template <typename T>
-void npy_save(std::string const& fname, cnpypp::span<T const> data,
-              std::string_view mode = "w") {
-  npy_save<T>(fname, data.cbegin(), data.cend(), mode);
+inline void npy_save(std::string const& fname, cnpypp::span<T const> data,
+                     std::string_view mode = "w") {
+  npy_save<T>(fname, data.begin(), data.end(), mode);
 }
 
 template <typename TTupleIterator>
-void npy_save(std::string const& fname,
-              std::vector<std::string_view> const& labels, TTupleIterator first,
-              cnpypp::span<uint64_t const> const shape,
-              std::string_view mode = "w",
-              MemoryOrder memory_order = MemoryOrder::C) {
+inline void
+npy_save(std::string const& fname, std::vector<std::string_view> const& labels,
+         TTupleIterator first, cnpypp::span<uint64_t const> const shape,
+         std::string_view mode = "w",
+         MemoryOrder memory_order = MemoryOrder::C) {
   using value_type = typename std::iterator_traits<TTupleIterator>::value_type;
 
   if (labels.size() != std::tuple_size_v<value_type>) {
-    throw std::runtime_error("number of labels does not match tuple size");
+    throw std::runtime_error(
+        "npy_save(): number of labels does not match tuple size");
   }
 
   auto constexpr& dtypes = tuple_info<value_type>::data_types;
@@ -734,28 +729,27 @@ void npy_save(std::string const& fname,
                      true_data_shape, memory_order_exist);
 
     if (tuple_info<value_type>::size != labels_exist.size()) {
-      throw std::runtime_error{"libcnpy++ error in npy_save(): appending "
+      throw std::runtime_error{"npy_save(): appending "
                                "failed: sizes not matching"};
     }
     if (!std::equal(data_types_exist.cbegin(), data_types_exist.cend(),
                     dtypes.cbegin())) {
-      throw std::runtime_error{"libcnpy++ error in npy_save(): appending "
+      throw std::runtime_error{"npy_save(): appending "
                                "failed: data type descriptors not matching"};
     }
     if (!std::equal(word_sizes_exist.cbegin(), word_sizes_exist.cend(),
                     sizes.cbegin())) {
-      throw std::runtime_error{"libcnpy++ error in npy_save(): appending "
+      throw std::runtime_error{"npy_save(): appending "
                                "failed: element sizes not matching"};
     }
 
     if (memory_order != memory_order_exist) {
-      throw std::runtime_error{
-          "libcnpy++ error in npy_save(): memory order does not match"};
+      throw std::runtime_error{"npy_save(): memory order does not match"};
     }
 
     if (true_data_shape.size() != shape.size()) {
       std::stringstream ss;
-      ss << "libcnpy++ error: npy_save attempting to append misdimensioned "
+      ss << "npy_save(): attempting to append misdimensioned "
             "data to "
          << std::quoted(fname);
       throw std::runtime_error{ss.str().c_str()};
@@ -764,7 +758,7 @@ void npy_save(std::string const& fname,
     if (shape.size() > 0 && !std::equal(std::next(shape.begin()), shape.end(),
                                         std::next(true_data_shape.begin()))) {
       std::stringstream ss;
-      ss << "libcnpy++ error: npy_save attempting to append misshaped data to "
+      ss << "npy_save(): attempting to append misshaped data to "
          << std::quoted(fname);
       throw std::runtime_error{ss.str().c_str()};
     }
@@ -794,11 +788,11 @@ void npy_save(std::string const& fname,
 }
 
 template <typename TTupleIterator>
-void npy_save(std::string const& fname,
-              std::vector<std::string_view> const& labels, TTupleIterator first,
-              std::initializer_list<uint64_t const> shape,
-              std::string_view mode = "w",
-              MemoryOrder memory_order = MemoryOrder::C) {
+inline void
+npy_save(std::string const& fname, std::vector<std::string_view> const& labels,
+         TTupleIterator first, std::initializer_list<uint64_t const> shape,
+         std::string_view mode = "w",
+         MemoryOrder memory_order = MemoryOrder::C) {
   npy_save<TTupleIterator>(
       fname, labels, first,
       cnpypp::span<uint64_t const>{std::data(shape), shape.size()}, mode,
