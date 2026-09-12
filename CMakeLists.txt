@@ -1,6 +1,6 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.10)
 
-project(CNPYpp LANGUAGES CXX C VERSION 2.2.0)
+project(CNPYpp LANGUAGES CXX C VERSION 2.2.1)
 
 add_library(cnpy++ "src/cnpy++.cpp" "src/buffer.cpp" "src/c_interface.c")
 
